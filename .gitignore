@@ -1,8 +1,8 @@
 .DS_Store
+a.out
 *.o
 *.gch
 *.pch
-*.out
 *.dSYM/
 .#*
 .vagrant
