@@ -1,0 +1,9 @@
+.DS_Store
+*.o
+*.gch
+*.pch
+*.out
+*.dSYM/
+.#*
+.vagrant
+tests-out/

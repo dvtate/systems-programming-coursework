@@ -1,0 +1,2 @@
+Usage: ./mytr STRING1 STRING2
+       ./mytr -d STRING
