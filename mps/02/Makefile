@@ -1,5 +1,5 @@
 CC      = gcc
-CFLAGS  = -g -Wall
+CFLAGS  = -g -Wall -std=c99
 
 all: mytr myzip myunzip
 
