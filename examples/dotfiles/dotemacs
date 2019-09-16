@@ -1,0 +1,76 @@
+;; don't show startup message
+(setq inhibit-startup-message t)
+
+;; turn off scroll bar, tool bar, menu bar
+(if (fboundp 'scroll-bar-mode) (scroll-bar-mode -1))
+(if (fboundp 'tool-bar-mode) (tool-bar-mode -1))
+(if (fboundp 'menu-bar-mode) (menu-bar-mode -1))
+
+;; display line number in mode line
+(setq line-number-mode 1)
+
+;; smooth scrolling
+(setq scroll-conservatively 10000)
+
+;; display column number in mode line
+(setq column-number-mode 1)
+
+;; show matching parens
+(show-paren-mode 1)
+
+;; audible bells suck
+(setq visible-bell t)
+
+;; don't highlight regions when mark is active
+(cua-mode 0)
+(transient-mark-mode 0)
+
+;; Turn on autofill
+;(setq-default auto-fill-function 'do-auto-fill)
+(set-fill-column 80) 
+(setq-default fill-column 80)
+(add-hook 'text-mode-hook 'turn-on-auto-fill)
+
+;; don't use tab characters
+(setq-default indent-tabs-mode nil)
+
+;; I like 4 space C indents
+(setq-default c-basic-offset 4)
+
+;; turn on global syntax highlighting
+(global-font-lock-mode 1)
+
+;; some handy keybindings
+(global-set-key (kbd "C-x /") 'comment-or-uncomment-region)
+
+;; map C-x C-m and C-c -C-m to M-x
+(global-set-key "\C-x\C-m" 'execute-extended-command)
+(global-set-key "\C-c\C-m" 'execute-extended-command)
+
+;; I use goto-line way too much to do the infuriating M-g g
+(global-set-key (kbd "C-x :") 'goto-line)
+(global-set-key (kbd "C-x C-;") 'goto-line)
+
+(setq-default reb-re-syntax 'string)
+
+;; I'm sick of typing yes or no
+(fset 'yes-or-no-p 'y-or-n-p)
+
+;; Ido is awesome
+(require 'ido)
+
+;; Start emacsserver (emacsclient -n file to connect)
+(server-start)
+
+;; set return to autoindent
+(mapcar (lambda (hook)
+	  (add-hook hook (lambda ()
+			    (local-set-key (kbd "RET")
+					   'newline-and-indent))))
+	'(c-mode-common-hook
+	  lisp-mode-hook
+	  emacs-lisp-mode-hook))
+
+(custom-set-variables
+ '(ido-enable-flex-matching t)
+ '(ido-mode (quote both) nil (ido)))
