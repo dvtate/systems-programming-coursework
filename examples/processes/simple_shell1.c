@@ -7,25 +7,30 @@
 
 int main () {
   int i, pid;
-  char buf[100];
+  char buf[100], *argv[10];
 
   /* read-eval loop */
   while (!feof(stdin)) {
-    printf(">");  /* print prompt */
+    printf("$ ");  /* print prompt */
 
-    /* read command and remove newline */
-    fgets(buf, 100, stdin);
-    for (i=strlen(buf)-1; buf[i]=='\n'; buf[i--]=0);
-
+    /* read command and build argv */
+    if (!fgets(buf, 100, stdin)) {
+      break;
+    }
+    
+    for (i=0, argv[0] = strtok(buf, " \n");
+         argv[i];
+         argv[++i] = strtok(NULL, " \n"));
+    
     if (strcmp(buf, "quit") == 0) {
       break;
     } else {
       /* fork and run command in child */
       if ((pid = fork()) == 0) {
-        if (execlp(buf, buf, (char *)0) < 0) {
+        if (execvp(argv[0], argv) < 0) {
           printf("Command not found\n");
-		  exit(0);
-		}
+          exit(0);
+        }
       }
 
       /* wait for completion in parent */
