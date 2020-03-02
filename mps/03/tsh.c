@@ -289,14 +289,11 @@ int builtin_cmd(char **argv)
  *
  */
 void do_kill(char** argv) {
-  const int id = atoid(argv[1]);
+  const int id = atoi(argv[1]);
   struct job_t* j = getjobjid(jobs, id);
   if (!j)
     j = getjobpid(jobs, id);
 
-  if (!j) {
-    printf()
-  }
 }
 
 
@@ -305,17 +302,20 @@ void do_kill(char** argv) {
  */
 void do_bgfg(char **argv)
 {
-  const int jid = atoi(argv[1]);
-  struct job_t* j = getjobjid(jobs, jid);
-
-  // user passed pid instead of jid
-  if (!j)
-    j = getjobpid(jobs, jid);
-
-  if (!j) {
-    printf("(%s): No such process\n", argv[1]);
-    return;
+  struct job_t* j;
+  if (argv[1][0] == '%') {
+    j = getjobjid(jobs, atoi(argv[1] + 1));
+    if (!j) {
+      printf("%s: No such job\n", argv[1]);
+      return;
+    }
+  } else {
+    j = getjobpid(jobs, atoi(argv[1]));
+    if (!j) {
+      printf("(%s): No such process\n", argv[1]);
+    }
   }
+
   const char fg = **argv == 'f';
   j->state = fg ? FG : BG;
 
@@ -347,7 +347,17 @@ void waitfg(pid_t pid)
 void sigchld_handler(int sig)
 {
   pid_t pid;
-  while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+  int stat;
+  while ((pid = waitpid(-1, &stat, WNOHANG)) > 0) {
+    struct job_t* j = getjobpid(jobs, pid);
+
+    if (WIFSIGNALED(stat))
+      printf("Job [%d] (%d) terminated by signal %d\n", j->jid, j->pid, WTERMSIG(stat));
+
+    // not in spec but i think this is a good feature to have
+    if (WIFEXITED(stat) && WEXITSTATUS(stat))
+      printf("Job [%d] (%d) exited with status %d\n", j->jid, j->pid, WEXITSTATUS(stat));
+
     deletejob(jobs, pid);
   }
 
