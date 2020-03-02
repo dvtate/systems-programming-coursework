@@ -15,7 +15,7 @@
 #define MAXLINE    1024   /* max line size */
 #define MAXARGS     128   /* max args on a command line */
 #define MAXJOBS      16   /* max jobs at any point in time */
-#define MAXJID    (1<<16)   /* max job ID */
+#define MAXJID    (1<<16) /* max job ID */
 
 /* Job states */
 #define UNDEF 0 /* undefined */
@@ -76,6 +76,8 @@ struct job_t *getjobpid(struct job_t *jobs, pid_t pid);
 struct job_t *getjobjid(struct job_t *jobs, int jid);
 int pid2jid(pid_t pid);
 void listjobs(struct job_t *jobs);
+
+void printjobpid(pid_t pid);
 
 void usage(void);
 void unix_error(char *msg);
@@ -166,8 +168,6 @@ int main(int argc, char **argv)
  */
 void eval(char *cmdline)
 {
-  /* the following code demonstrates how to use parseline --- you'll
-   * want to replace most of it (at least the print statements). */
   int i, bg;
   char* argv[MAXARGS];
 
@@ -175,36 +175,37 @@ void eval(char *cmdline)
   if (builtin_cmd(argv)) {
     return;
   }
-  if (bg) { // cmd ends in `&`
-
-    printf("background job requested\n");
-
-  }
 
   const char* pname = argv[0];
 
+  // TODO: move this somewhere else
   sigset_t mask;
   sigemptyset(&mask);
   sigaddset(&mask, SIGCHLD);
   sigprocmask(SIG_BLOCK, &mask, NULL);
-  pid_t pid = fork();
 
+  pid_t pid = fork();
 
   if (pid == 0) {
     sigprocmask(SIG_UNBLOCK, &mask, NULL);
-    if (execvp(pname, argv) < 0) {
-      printf("%s: command not found", pname);
+    setpgrp();
+    if (execve(pname, argv, environ) < 0) {
+      printf("%s: command not found\n", pname);
     }
     exit(0);
   }
 
   addjob(jobs, pid, bg ? BG : FG, cmdline);
   sigprocmask(SIG_UNBLOCK, &mask, NULL);
-  for (i=0; argv[i] != NULL; i++) {
-    printf("argv[%d]=%s%s", i, argv[i], (argv[i+1]==NULL)?"\n":", ");
-  }
+  if (bg)
+    printjobpid(pid);
+  // for (i=0; argv[i] != NULL; i++) {
+  //   printf("argv[%d]=%s%s", i, argv[i], (argv[i+1]==NULL)?"\n":", ");
+  // }
 
-  waitfg(pid);
+  while (fgpid(jobs))
+    pause();
+
   return;
 }
 
@@ -269,7 +270,6 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv)
 {
-  printf("builtin:%s\n", argv[0]);
   if (strcmp(argv[0], "quit") == 0) {
     fprintf(stdout, "quit");
     exit(0);
@@ -279,10 +279,26 @@ int builtin_cmd(char **argv)
   } else if (strcmp(argv[0], "fg") == 0 || strcmp(argv[0], "bg") == 0) {
     do_bgfg(argv);
     return 1;
+  } else if (strcmp(argv[0], "kill") == 0) {
+
   }
 
   return 0;     /* not a builtin command */
 }
+/*
+ *
+ */
+void do_kill(char** argv) {
+  const int id = atoid(argv[1]);
+  struct job_t* j = getjobjid(jobs, id);
+  if (!j)
+    j = getjobpid(jobs, id);
+
+  if (!j) {
+    printf()
+  }
+}
+
 
 /*
  * do_bgfg - Execute the builtin bg and fg commands
@@ -297,12 +313,13 @@ void do_bgfg(char **argv)
     j = getjobpid(jobs, jid);
 
   if (!j) {
-    printf("invalid job passed to %s, use `jobs` to see jobs list\n", argv[0]);
+    printf("(%s): No such process\n", argv[1]);
     return;
   }
   const char fg = **argv == 'f';
   j->state = fg ? FG : BG;
 
+  kill(j->pid, SIGCONT);
 }
 
 /*
@@ -524,6 +541,11 @@ void listjobs(struct job_t *jobs)
       printf("%s", jobs[i].cmdline);
     }
   }
+}
+
+void printjobpid(pid_t pid) {
+  struct job_t* j = getjobpid(jobs, pid);
+  printf("[%d] (%d) %s\n", j->jid, j->pid, j->cmdline);
 }
 /******************************
  * end job list helper routines
