@@ -3,7 +3,7 @@
 # Note: requires a 64-bit x86-64 system
 #
 CC = gcc
-CFLAGS = -g -Wall -Werror -std=c99 -m64 -O3
+CFLAGS = -g -Wall -Werror -std=c99 -m64 -lefence
 
 all: csim test-trans tracegen
 

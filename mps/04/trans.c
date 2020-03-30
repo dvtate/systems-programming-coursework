@@ -13,13 +13,122 @@
 int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 
 
-
-// helper function
-static inline void transpose_scalar_block(const int lda, const int ldb, int* A, int* B, const int block_size)
+void transpose_32x32(int M, int N, int A[M][N], int B[N][M])
 {
+    int i, j, k, l;
+    int temp;
+
+    // operating on matrix using quadrants to reduce cache misses
+    // 2 1
+    // 3 4
+
+    for (i = 0; i < M; i += 8)
+        for (j = 0; j < N; j += 8) {
+            // A3 -> B1
+            for (k = i + 7; k > i + 3 && k < M; k--)
+                for (l = j + 3; l >= j && l < N; l--)
+                    B[l][k] = A[k][l];
+
+            // A4 -> B2
+            for (k = i + 7; k > i + 3 && k < M; k--)
+                for (l = j + 4; l <= j + 7 && l < N; l++)
+                    B[l - 4][k - 4] = A[k][l];
+
+            // A1 -> B3
+            for (k = i; k <= i + 3 && k < M; k++)
+                for (l = j + 4; l <= j + 7 && l < N; l++)
+                    B[l][k] = A[k][l];
+
+            // A2 -> B4
+            for (k = i; k <= i + 3 && k < M; k++)
+                for (l = j; l <= j + 3 && l < N; l++)
+                    B[l + 4][k + 4] = A[k][l];
+
+            // swap B2 <--> B4
+            for (k = i; k <= i + 3 && k < M; k++)
+                for (l = j; l <= j + 3 && l < N; l++) {
+                    temp = B[k + 4 + j - i][l + 4 + i - j];
+                    B[k + 4 + j - i][l + 4 + i - j] = B[k + j - i][l + i - j];
+                    B[k + j - i][l +  i - j] = temp;
+                }
+        }
 
 }
 
+
+/*The function transposes 61 by 67 matrix by saving the diagonal elements
+ *in temp, which ensures that A and B's
+ *cache lines are not accessed at the same time, thereby reducing the
+ *number of misses. This is because they map to the same set.
+ */
+/*Having the block size 18 makes it within the  limit of 2000
+ *The number was arrived at by trial and error
+ *The random nature of the number is what probably helped.
+*/
+void transpose_61x67(int M, int N, int A[N][M], int B[M][N])
+{
+    int i, j, k, l;
+    int temp;
+
+    const int bsize = 18;
+    for (i = 0; i < M; i += bsize)
+        for (j = 0; j < N; j += bsize)
+            for (k = i; k < i + bsize && k < M; k++) {
+                // for whatever reason diagonal elements cause problems
+                for (l = j; l < j + bsize && l < N; l++)
+
+                    if (k == l)
+                        temp = A[k][k];
+                    else
+                        B[k][l] = A[l][k];
+
+                if (i == j)
+                    B[k][k] = temp;
+            }
+
+}
+
+void transpose_asymetric(int M, int N, int A[N][M], int B[M][N], const unsigned short bsize) {
+    int i,j,p,q;
+    int temp;
+
+    for(i = 0; i < M; i += bsize) {
+        for (j = 0; j < N; j += bsize) {
+            for (p = i; p < i + bsize && p < M; p++) {
+                // Only for diagonal elements, do we have the problem
+                for (q = j; q < j + bsize && q < N; q++)
+
+                    if (p == q)
+                        temp = A[p][p];
+                    else
+                        B[p][q] = A[q][p];
+
+                if (i == j)
+                    B[p][p] = temp;
+
+            }
+        }
+    }
+}
+
+void transpose_generic(int M, int N, int A[N][M], int B[M][N], const unsigned short block_size) {
+    unsigned short i, j, k, l;
+    int *ap, *bp;
+    unsigned int in, kn;
+    for (i = 0; i < M; i += block_size) {
+        in = i * N;
+        for (j = 0; j < N; j += block_size) {
+            ap = A[0] + in + j;
+            bp = B[0] + j * M + i;
+            for (k = 0; k < block_size; k++) {
+                kn = k * N;
+                for (l = 0; l < block_size; l++) {
+                    bp[l * M + k] = ap[kn + l];
+                }
+            }
+        }
+    }
+}
 
 /*
  * transpose_submit - This is the solution transpose function that you
@@ -31,30 +140,18 @@ static inline void transpose_scalar_block(const int lda, const int ldb, int* A, 
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N])
 {
-    int i, j, tmp;
 
-    for (i = 0; i < N; i++) {
-        for (j = 0; j < M; j++) {
-            tmp = A[i][j];
-            B[j][i] = tmp;
-        }
-    }
-    /*
-    // assessment is using 5bit offsets and thus a 32byte block size
-    const unsigned short block_size = 1 << 5;
+    if (M == 32)
+        transpose_32x32(M, N, A, B);
+    if (M == 61)
+        transpose_61x67(M,N,A,B);
+    else if (M == 64)
+        transpose_generic(M, N, A, B, (1 << 4) / sizeof(int));
+    else if (M != N)
+        transpose_asymetric(M, N, A, B, (1 << 5) / sizeof(int));
 
-    for (unsigned i = 0; i < M; i += block_size) {
-        for (int j = 0; j < N; j += block_size) {
-            for (int k = 0; k < block_size; k++) {
-                for (int l = 0; l < block_size; l++) {
-                        B[0][j * M + i + l * M + k] = A[0][k*N + l + i * N + j];
-                }
-            }
-        }
-    }
-    */
+
 }
-
 
 /*
  * You can define additional transpose functions below. We've defined

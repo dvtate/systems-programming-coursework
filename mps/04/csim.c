@@ -6,6 +6,7 @@
 #include <math.h>
 #include <inttypes.h>
 #include <string.h>
+#include <assert.h>
 
 // could use PPC to compile 2 versions of everything...
 char flag_verbose = 0;
@@ -34,7 +35,7 @@ struct cache_block_t
 {
     int valid;
     int dirty;
-    char *tag;
+    char tag[ADDR_BITS];
     //char *block;
 };
 
@@ -49,7 +50,7 @@ struct vg_acc_t {
         VG_DATA_MOD   = 'M',
     } operator;
     // hex address
-    char address[ADDR_BITS / 4 + 1];
+    char address[ADDR_BITS + 1];
     // number of bytes
     unsigned char size;
 };
@@ -61,6 +62,7 @@ struct cache_t {
     uint64_t block_size; // in bytes
     uint64_t hits;
     uint64_t misses;
+    uint64_t evictions;
     uint64_t reads;
     uint64_t writes;
 
@@ -93,7 +95,9 @@ read_line:;
         // mline += 3;
     } else {
         ret->operator = mline[1];
-        mline += 3;
+        mline += 3;if (flag_verbose)
+        printf(" miss");
+
     }
 
     // read address
@@ -211,6 +215,85 @@ void itob(uint64_t num, char* ret)
     return;
 }
 
+void read_address(char* tag, char* set, char* block, struct cache_t* cache)
+{
+    // look for it
+    for (int i = 0; i < cache->lines_per_set; i++) {
+        struct cache_block_t b = cache->blocks[btoi(set) * cache->lines_per_set + i];
+        if (b.valid && strcmp(b.tag, tag) == 0) {
+            cache->hits++;
+            if (flag_verbose)
+                printf(" hit");
+            return;
+        }
+    }
+
+    // not in cache
+    cache->misses++;
+    if (flag_verbose)
+        printf(" miss");
+
+    for (int i = 0; i < cache->lines_per_set - 1; i++) {
+        struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + i];
+        // found unoccupied block
+        if (!b->valid) {
+            strcpy(b->tag, tag);
+            b->valid = 1;
+            return;
+        }
+    }
+
+    struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + cache->lines_per_set - 1];
+    if (b->valid) {
+        cache->evictions++;
+        if (flag_verbose)
+            printf(" eviction");
+    }
+
+    strcpy(b->tag, tag);
+    b->valid = 1;
+
+}
+
+void write_address(char* tag, char* set, char* block, struct cache_t* cache)
+{
+    // look for it
+    for (int i = 0; i < cache->lines_per_set; i++) {
+        struct cache_block_t b = cache->blocks[btoi(set) * cache->lines_per_set + i];
+        if (b.valid && strcmp(b.tag, tag) == 0) {
+            cache->hits++;
+            if (flag_verbose)
+                printf(" hit");
+            return;
+        }
+    }
+
+    // not in cache
+    cache->misses++;
+    if (flag_verbose)
+        printf(" miss");
+
+    for (int i = 0; i < cache->lines_per_set - 1; i++) {
+        struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + i];
+        // found unoccupied block
+        if (!b->valid) {
+            strcpy(b->tag, tag);
+            b->valid = 1;
+            return;
+        }
+    }
+
+    struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + cache->lines_per_set - 1];
+    if (b->valid) {
+        cache->evictions++;
+        if (flag_verbose)
+            printf(" eviction");
+    }
+    
+    strcpy(b->tag, tag);
+    b->valid = 1;
+}
+
 int main(int argc, char** argv)
 {
 
@@ -237,14 +320,14 @@ int main(int argc, char** argv)
                 break;
             case 's':
                 setbits = atoi(optarg);
-                nsets = pow(2, setbits);
+                nsets = 1 << setbits;
                 break;
             case 'E':
                 lines_per_set = atoi(optarg);
                 break;
             case 'b':
                 offsetbits = atoi(optarg);
-                block_size = pow(2, offsetbits);
+                block_size = 1 << offsetbits;
                 break;
             case 't':
                 trace_file = optarg;
@@ -274,21 +357,20 @@ int main(int argc, char** argv)
 
     // initialize cache
     struct cache_t cache = { .nsets=nsets,  .lines_per_set = lines_per_set, .block_size=block_size,
-        .hits=0, .misses=0, .reads=0, .writes=0 };
+        .hits=0, .misses=0, .evictions=0, .reads=0, .writes=0 };
 
     // initialize cache blocks
-    cache.blocks = (struct cache_block_t*) malloc(sizeof(struct cache_block_t) * nsets * lines_per_set);
+    cache.blocks = (struct cache_block_t*) calloc(sizeof(struct cache_block_t), nsets * lines_per_set + 2);
     for (unsigned int i = 0; i < nsets * lines_per_set; i++) {
-        cache.blocks[i].tag = (char*) malloc(sizeof(char) * (tagsize + 1));
-
         for (unsigned int j = 0; j < tagsize; j++)
             cache.blocks[i].tag[j] = '0';
+        cache.blocks[i].tag[tagsize] = '\0';
 
         cache.blocks[i].valid = 0;
         cache.blocks[i].dirty = 0;
     }
 
-    unsigned long long hits = 0, misses = 0, evictions = 0;
+
     const unsigned tagbits = ADDR_BITS - setbits - offsetbits;
 
     char tag[ADDR_BITS];
@@ -297,77 +379,47 @@ int main(int argc, char** argv)
     char addr[ADDR_BITS + 1];
 
     size_t line_len = 150;
-    char* line = (char*) malloc(line_len);
+    char* line = (char*) calloc(sizeof(char), line_len);
     struct vg_acc_t cmd;
     while (parse_line(f, &cmd, &line, &line_len)) {
         // the reference appears to ignore the size component...
         // so I won't bother with it
         //while (cmd.size) {
-        printf("addrh: %s\n", cmd.address);
         itob(htoi(cmd.address), addr);
-        printf("addrb: %s\n", addr);
 
         strncpy(tag, addr, tagbits);
         tag[tagbits] = '\0';
         strncpy(set, addr + tagbits, setbits);
         set[setbits] = '\0';
         strcpy(offset, addr + tagbits + setbits);
-        printf("tag: %s\n", tag);
-        printf("set: %s\n", set);
-        printf("offset: %s\n", offset);
 
-        int isread = 0;
-        if (cmd.operator == 'L')
-            isread = 1;
-
-        if (isread)
-            cache.reads++;
-        else
-            cache.writes++;
+        if (flag_verbose) {
+            //printf("addrh: %s\n", cmd.address);
+            printf("addrb: %s\n", addr);
+            printf("tag: %s\n", tag);
+            printf("set: %s\n", set);
+            printf("offset: %s\n", offset);
+        }
 
         if (flag_verbose)
             printf("\n%s ", line[0] == ' ' ? (line + 1) : line);
 
-        for (int i = 0; i < lines_per_set; i++) {
-            struct cache_block_t b = cache.blocks[btoi(set) * lines_per_set + i];
-            if (b.valid && strcmp(b.tag, tag) == 0) {
-                hits++;
-                if (cmd.operator == VG_DATA_MOD) {
-                    hits++;
-                    if (flag_verbose)
-                        printf("hit hit\n");
-                } else if (flag_verbose) {
-                    printf("hit\n");
-                }
-                goto next;
-            }
-        }
+        if (cmd.operator == VG_DATA_LOAD || cmd.operator == VG_DATA_MOD)
+            read_address(tag, set, offset, &cache);
+        if (cmd.operator == VG_DATA_STORE ||  cmd.operator == VG_DATA_MOD)
+            write_address(tag, set, offset, &cache);
 
-        if (cmd.operator == 'M') {
-            if (flag_verbose)
-                printf("miss hit\n");
-            hits++; misses++;
-        } else {
-            if (flag_verbose)
-                printf("miss\n");
-            misses++;
-
-            // try to write to
-            for (int i = 0; i < lines_per_set - 1; i++) {
-                struct cache_block_t b = cache.blocks[btoi(set) * lines_per_set + i];
-                if (!b.valid) {
-                }
-            }
-        }
+        // endl
+        if (flag_verbose)
+            putc('\n', stdout);
 
 
-        next:;
         // itoh(htoi(cmd.address), cmd.address);
         //     cmd.size--;
         // }
     }
 
-    printSummary(hits, misses, evictions);
+    printSummary(cache.hits, cache.misses, cache.evictions);
 
     return 0;
 }
