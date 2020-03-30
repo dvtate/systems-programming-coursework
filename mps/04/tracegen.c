@@ -1,7 +1,7 @@
-/* 
+/*
  * tracegen.c - Running the binary tracegen with valgrind produces
- * a memory trace of all of the registered transpose functions. 
- * 
+ * a memory trace of all of the registered transpose functions.
+ *
  * The beginning and end of each registered transpose function's trace
  * is indicated by reading from "marker" addresses. These two marker
  * addresses are recorded in file for later use.
@@ -17,7 +17,7 @@
 
 /* External variables declared in cachelab.c */
 extern trans_func_t func_list[MAX_TRANS_FUNCS];
-extern int func_counter; 
+extern int func_counter;
 
 /* External function from trans.c */
 extern void registerFunctions();
@@ -68,20 +68,22 @@ int main(int argc, char* argv[]){
             exit(1);
         }
     }
-  
+
 
     /*  Register transpose functions */
     registerFunctions();
 
     /* Fill A with data */
-    initMatrix(M,N, A, B); 
+    initMatrix(M,N, A, B);
 
     /* Record marker addresses */
     FILE* marker_fp = fopen(".marker","w");
     assert(marker_fp);
-    fprintf(marker_fp, "%llx %llx", 
+    fprintf(marker_fp, "%llx %llx %llx %llx",
             (unsigned long long int) &MARKER_START,
-            (unsigned long long int) &MARKER_END );
+            (unsigned long long int) &MARKER_END,
+            (unsigned long long int) A,
+            (unsigned long long int) B );
     fclose(marker_fp);
 
     if (-1==selectedFunc) {
@@ -103,5 +105,3 @@ int main(int argc, char* argv[]){
     }
     return 0;
 }
-
-

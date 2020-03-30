@@ -27,7 +27,7 @@ extern void registerFunctions();
 
 /* External variables defined in cachelab-tools.c */
 extern trans_func_t func_list[MAX_TRANS_FUNCS];
-extern int func_counter; 
+extern int func_counter;
 
 /* Globals set on the command line */
 static int M = 0;
@@ -41,7 +41,16 @@ struct results {
 };
 static struct results results = {-1, 0, INT_MAX};
 
-/* 
+static void writeInfoFile(const char *basename, unsigned long long int aStart, unsigned long long int bStart, int m, int n) {
+    char filename[4096];
+    sprintf(filename, "%s.info", basename);
+    FILE *file = fopen(filename, "w");
+    if (!file) { return; }
+    fprintf(file, "%llx %llx %d %d", aStart, bStart, m, n);
+    fclose(file);
+}
+
+/*
  * eval_perf - Evaluate the performance of the registered transpose functions
  */
 void eval_perf(unsigned int s, unsigned int E, unsigned int b)
@@ -52,11 +61,11 @@ void eval_perf(unsigned int s, unsigned int E, unsigned int b)
     char buf[1000], cmd[255];
     char filename[128];
 
-    registerFunctions(); 
+    registerFunctions();
 
     /* Open the complete trace file */
-    FILE* full_trace_fp;  
-    FILE* part_trace_fp; 
+    FILE* full_trace_fp;
+    FILE* part_trace_fp;
 
     /* Evaluate the performance of each registered transpose function */
 
@@ -69,16 +78,18 @@ void eval_perf(unsigned int s, unsigned int E, unsigned int b)
         /* Use valgrind to generate the trace */
 
         sprintf(cmd, "valgrind --tool=lackey --trace-mem=yes --log-fd=1 -v ./tracegen -M %d -N %d -F %d  > trace.tmp", M, N,i);
-        flag=WEXITSTATUS(system(cmd));
+        int status = system(cmd);
+        flag=WEXITSTATUS(status);
         if (0!=flag) {
-            printf("Validation error at function %d! Run ./tracegen -M %d -N %d -F %d for details.\nSkipping performance evaluation for this function.\n",flag-1,M,N,i);      
+            printf("Validation error at function %d! Run ./tracegen -M %d -N %d -F %d for details.\nSkipping performance evaluation for this function.\n",flag-1,M,N,i);
             continue;
         }
+        unsigned long long int aStart, bStart;
 
         /* Get the start and end marker addresses */
         FILE* marker_fp = fopen(".marker", "r");
         assert(marker_fp);
-        fscanf(marker_fp, "%llx %llx", &marker_start, &marker_end);
+        fscanf(marker_fp, "%llx %llx %llx %llx", &marker_start, &marker_end, &aStart, &bStart);
         fclose(marker_fp);
 
 
@@ -97,7 +108,8 @@ void eval_perf(unsigned int s, unsigned int E, unsigned int b)
         sprintf(filename, "trace.f%d", i);
         part_trace_fp = fopen(filename, "w");
         assert(part_trace_fp);
-    
+        writeInfoFile(filename, aStart, bStart, M, N);
+
         /* Locate trace corresponding to the trans function */
         flag = 0;
         while (fgets(buf, 1000, full_trace_fp) != NULL) {
@@ -106,7 +118,7 @@ void eval_perf(unsigned int s, unsigned int E, unsigned int b)
             if (buf[0]==' ' && buf[2]==' ' &&
                 (buf[1]=='S' || buf[1]=='M' || buf[1]=='L' )) {
                 sscanf(buf+3, "%llx,%u", &addr, &len);
-        
+
                 /* If start marker found, set flag */
                 if (addr == marker_start)
                     flag = 1;
@@ -133,14 +145,15 @@ void eval_perf(unsigned int s, unsigned int E, unsigned int b)
             }
         }
         fclose(full_trace_fp);
+        unlink("trace.tmp");
 
         /* Run the reference simulator */
         printf("Step 2: Evaluating performance (s=%d, E=%d, b=%d)\n", s, E, b);
         char cmd[255];
-        sprintf(cmd, "./csim-ref -s %u -E %u -b %u -t trace.f%d > /dev/null", 
+        sprintf(cmd, "./csim-ref -s %u -E %u -b %u -t trace.f%d > /dev/null",
                 s, E, b, i);
         system(cmd);
-    
+
         /* Collect results from the reference simulator */
         FILE* in_fp = fopen(".csim_results","r");
         assert(in_fp);
@@ -151,13 +164,13 @@ void eval_perf(unsigned int s, unsigned int E, unsigned int b)
         func_list[i].num_evictions = evictions;
         printf("func %u (%s): hits:%u, misses:%u, evictions:%u\n",
                i, func_list[i].description, hits, misses, evictions);
-    
+
         /* If it is transpose_submit(), record number of misses */
         if (results.funcid == i) {
             results.misses = misses;
         }
     }
-  
+
 }
 
 /*
@@ -169,7 +182,7 @@ void usage(char *argv[]){
     printf("  -h          Print this help message.\n");
     printf("  -M <rows>   Number of matrix rows (max %d)\n", MAXN);
     printf("  -N <cols>   Number of  matrix columns (max %d)\n", MAXN);
-    printf("Example: %s -M 8 -N 8\n", argv[0]);       
+    printf("Example: %s -M 8 -N 8\n", argv[0]);
 }
 
 /*
@@ -192,7 +205,7 @@ void sigalrm_handler(int signum){
     exit(1);
 }
 
-/* 
+/*
  * main - Main routine
  */
 int main(int argc, char* argv[])
@@ -215,7 +228,7 @@ int main(int argc, char* argv[])
             exit(1);
         }
     }
-  
+
     if (M == 0 || N == 0) {
         printf("Error: Missing required argument\n");
         usage(argv);
@@ -244,11 +257,11 @@ int main(int argc, char* argv[])
 
     /* Check the performance of the student's transpose function */
     eval_perf(5, 1, 5);
-  
+
     /* Emit the results for this particular test */
     if (results.funcid == -1) {
         printf("\nError: We could not find your transpose_submit() function\n");
-        printf("Error: Please ensure that description field is exactly \"%s\"\n", 
+        printf("Error: Please ensure that description field is exactly \"%s\"\n",
                SUBMIT_DESCRIPTION);
         printf("\nTEST_TRANS_RESULTS=0:0\n");
     }
