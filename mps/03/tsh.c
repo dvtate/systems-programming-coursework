@@ -190,7 +190,7 @@ void eval(char *cmdline)
     sigprocmask(SIG_UNBLOCK, &mask, NULL);
     setpgrp();
     if (execve(pname, argv, environ) < 0) {
-      printf("%s: command not found\n", pname);
+      printf("%s: Command not found\n", pname);
     }
     exit(0);
   }
