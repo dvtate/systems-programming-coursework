@@ -2,6 +2,7 @@
 #define CSIM_UTIL_H
 
 #include <stdlib.h>
+#include <stdio.h>
 
 // this is in posix standard but not in STD-C99
 // I orginally wrote this for my scripting language: github.com/dvtate/old-yoda
@@ -26,7 +27,7 @@ int getline(char** lineptr, size_t* n, FILE* stream) {
 	if (bufptr == NULL) {
 		bufptr = (char*) malloc(128);
 		if (bufptr == NULL)
-			return -1;
+			return -2;
 
 		size = 128;
 	}

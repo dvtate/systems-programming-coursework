@@ -49,7 +49,7 @@ struct vg_acc_t {
         VG_DATA_MOD   = 'M',
     } operator;
     // hex address
-    char address[ADDR_BITS / 8 + 1];
+    char address[ADDR_BITS / 4 + 1];
     // number of bytes
     unsigned char size;
 };
@@ -68,40 +68,50 @@ struct cache_t {
 };
 
 // return 1 on failure/eof
-char parse_line(FILE* trace, struct vg_acc_t* ret)
+char parse_line(FILE* trace, struct vg_acc_t* ret, char** line, size_t* line_len)
 {
-    static size_t line_len = 0;
-    static char* line = NULL;
 
 read_line:;
-    unsigned int res = getline(&line, &line_len, trace);
+    int res = getline(line, line_len, trace);
+    // printf("res:%d\n", res);
+    // printf("line: %s\n", *line);
     if (res < 0)
         return 0;
 
-    // ignore comments
-    if (line[0] == '-' || line[0] == '=')
-        goto read_line;
+    // mutable copy of line
+    char* mline = *line;
 
-    // mutable copy of line that we can
-    char* mline = line;
+    // ignore comments
+    if (mline[0] == '-' || mline[0] == '=')
+        goto read_line;
 
     // ignore instruction type
     if (mline[0] == 'I') {
         goto read_line;
-        ret->operator = VG_INSTR_LOAD;
-        mline += 3;
+
+        // ret->operator = VG_INSTR_LOAD;
+        // mline += 3;
     } else {
         ret->operator = mline[1];
         mline += 3;
     }
 
     // read address
-    strncpy(ret->address, mline, ADDR_BITS / 8);
-    ret->address[ADDR_BITS / 8] = '\0';
-    mline += ADDR_BITS / 8 + 1;
+    // find comma
+    int i = 0;
+    while (mline[i] != '\0' && mline[i] != ',')
+        i++;
+    strncpy(ret->address, mline, i + 1);
+
+    ret->address[i] = '\0';
+    mline += i + 1;
 
     // read size
     ret->size = atoi(mline);
+
+    while (*mline != '\n')
+        mline++;
+    *mline = '\0';
 
     // success
     return 1;
@@ -174,13 +184,6 @@ void itoh(uint64_t n, char* ret)
     sprintf(ret, "%lx", n);
 }
 
-/* btoi
- * Converts a binary string to an integer. Returns 0 on error.
- * src: http://www.daniweb.com/software-development/c/code/216372
- *
- * @param   bin     binary string to convert
- * @result  int     decimal representation of binary string
- */
 uint64_t btoi(char *bin)
 {
     int  b, k, m, n;
@@ -200,23 +203,12 @@ uint64_t btoi(char *bin)
     return(sum);
 }
 
-void itob(unsigned int num, char* ret)
+void itob(uint64_t num, char* ret)
 {
     ret[ADDR_BITS] = '\0';
     for(int i = 0; i < ADDR_BITS; i++)
-        ret[ADDR_BITS - 1 - i] = (num == ((1 << i) | num)) ? '1' : '0';
+        ret[ADDR_BITS - 1 - i] = (num == ((1ULL << i) | num)) ? '1' : '0';
     return;
-}
-
-// converts address to a cache lookup
-void address_to_lookup(char* addr, char* lookup const int setbits, const int offsetbits) {
-    if (flag_verbose) {
-        printf("Address:%s\n", addr);
-    }
-
-
-    // copy tag
-    strncpy(lookup, addr, ADDR_BITS - )
 }
 
 int main(int argc, char** argv)
@@ -274,14 +266,15 @@ int main(int argc, char** argv)
     if (trace_file == NULL)
         return fprintf(stderr, "Missing/invalid -t option\n");
 
-    FILE* f = fopen(trace_file, "wt");
+    FILE* f = fopen(trace_file, "r");
     if (!f)
         return fprintf(stderr, "could not open file %s", trace_file);
 
     const unsigned int tagsize = ADDR_BITS - offsetbits - setbits;
 
     // initialize cache
-    struct cache_t cache = { .nsets=nsets,  .lines_per_set = lines_per_set, .block_size=block_size };
+    struct cache_t cache = { .nsets=nsets,  .lines_per_set = lines_per_set, .block_size=block_size,
+        .hits=0, .misses=0, .reads=0, .writes=0 };
 
     // initialize cache blocks
     cache.blocks = (struct cache_block_t*) malloc(sizeof(struct cache_block_t) * nsets * lines_per_set);
@@ -295,17 +288,86 @@ int main(int argc, char** argv)
         cache.blocks[i].dirty = 0;
     }
 
+    unsigned long long hits = 0, misses = 0, evictions = 0;
+    const unsigned tagbits = ADDR_BITS - setbits - offsetbits;
+
     char tag[ADDR_BITS];
-    char index[ADDR_BITS];
+    char set[ADDR_BITS];
     char offset[ADDR_BITS];
     char addr[ADDR_BITS + 1];
 
+    size_t line_len = 150;
+    char* line = (char*) malloc(line_len);
     struct vg_acc_t cmd;
-    while (!parse_line(f, &cmd)) {
-        htob(cmd.address, addr);
-        printf("addr:%s", addr);
+    while (parse_line(f, &cmd, &line, &line_len)) {
+        // the reference appears to ignore the size component...
+        // so I won't bother with it
+        //while (cmd.size) {
+        printf("addrh: %s\n", cmd.address);
+        itob(htoi(cmd.address), addr);
+        printf("addrb: %s\n", addr);
+
+        strncpy(tag, addr, tagbits);
+        tag[tagbits] = '\0';
+        strncpy(set, addr + tagbits, setbits);
+        set[setbits] = '\0';
+        strcpy(offset, addr + tagbits + setbits);
+        printf("tag: %s\n", tag);
+        printf("set: %s\n", set);
+        printf("offset: %s\n", offset);
+
+        int isread = 0;
+        if (cmd.operator == 'L')
+            isread = 1;
+
+        if (isread)
+            cache.reads++;
+        else
+            cache.writes++;
+
+        if (flag_verbose)
+            printf("\n%s ", line[0] == ' ' ? (line + 1) : line);
+
+        for (int i = 0; i < lines_per_set; i++) {
+            struct cache_block_t b = cache.blocks[btoi(set) * lines_per_set + i];
+            if (b.valid && strcmp(b.tag, tag) == 0) {
+                hits++;
+                if (cmd.operator == VG_DATA_MOD) {
+                    hits++;
+                    if (flag_verbose)
+                        printf("hit hit\n");
+                } else if (flag_verbose) {
+                    printf("hit\n");
+                }
+                goto next;
+            }
+        }
+
+        if (cmd.operator == 'M') {
+            if (flag_verbose)
+                printf("miss hit\n");
+            hits++; misses++;
+        } else {
+            if (flag_verbose)
+                printf("miss\n");
+            misses++;
+
+            // try to write to
+            for (int i = 0; i < lines_per_set - 1; i++) {
+                struct cache_block_t b = cache.blocks[btoi(set) * lines_per_set + i];
+                if (!b.valid) {
+                }
+            }
+        }
+
+
+        next:;
+        // itoh(htoi(cmd.address), cmd.address);
+        //     cmd.size--;
+        // }
     }
 
+    printSummary(hits, misses, evictions);
 
     return 0;
 }
