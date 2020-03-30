@@ -95,9 +95,7 @@ read_line:;
         // mline += 3;
     } else {
         ret->operator = mline[1];
-        mline += 3;if (flag_verbose)
-        printf(" miss");
-
+        mline += 3;
     }
 
     // read address
@@ -233,8 +231,10 @@ void read_address(char* tag, char* set, char* block, struct cache_t* cache)
     if (flag_verbose)
         printf(" miss");
 
-    for (int i = 0; i < cache->lines_per_set - 1; i++) {
-        struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + i];
+
+    struct cache_block_t* b;
+    for (int i = 0; i < cache->lines_per_set; i++) {
+        b = &cache->blocks[btoi(set) * cache->lines_per_set + i];
         // found unoccupied block
         if (!b->valid) {
             strcpy(b->tag, tag);
@@ -243,7 +243,6 @@ void read_address(char* tag, char* set, char* block, struct cache_t* cache)
         }
     }
 
-    struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + cache->lines_per_set - 1];
     if (b->valid) {
         cache->evictions++;
         if (flag_verbose)
@@ -273,8 +272,9 @@ void write_address(char* tag, char* set, char* block, struct cache_t* cache)
     if (flag_verbose)
         printf(" miss");
 
-    for (int i = 0; i < cache->lines_per_set - 1; i++) {
-        struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + i];
+    struct cache_block_t* b;
+    for (int i = 0; i < cache->lines_per_set; i++) {
+        b = &cache->blocks[btoi(set) * cache->lines_per_set + i];
         // found unoccupied block
         if (!b->valid) {
             strcpy(b->tag, tag);
@@ -283,13 +283,12 @@ void write_address(char* tag, char* set, char* block, struct cache_t* cache)
         }
     }
 
-    struct cache_block_t* b = &cache->blocks[btoi(set) * cache->lines_per_set + cache->lines_per_set - 1];
     if (b->valid) {
         cache->evictions++;
         if (flag_verbose)
             printf(" eviction");
     }
-    
+
     strcpy(b->tag, tag);
     b->valid = 1;
 }

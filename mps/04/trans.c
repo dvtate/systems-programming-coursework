@@ -55,62 +55,18 @@ void transpose_32x32(int M, int N, int A[M][N], int B[N][M])
 
 }
 
-
-/*The function transposes 61 by 67 matrix by saving the diagonal elements
- *in temp, which ensures that A and B's
- *cache lines are not accessed at the same time, thereby reducing the
- *number of misses. This is because they map to the same set.
- */
-/*Having the block size 18 makes it within the  limit of 2000
- *The number was arrived at by trial and error
- *The random nature of the number is what probably helped.
-*/
-void transpose_61x67(int M, int N, int A[N][M], int B[M][N])
+void transpose_generic(int M, int N, int A[N][M], int B[M][N], const unsigned short bsize)
 {
-    int i, j, k, l;
-    int temp;
+    int i,j,p,q;
 
-    const int bsize = 18;
     for (i = 0; i < M; i += bsize)
         for (j = 0; j < N; j += bsize)
-            for (k = i; k < i + bsize && k < M; k++) {
-                // for whatever reason diagonal elements cause problems
-                for (l = j; l < j + bsize && l < N; l++)
-
-                    if (k == l)
-                        temp = A[k][k];
-                    else
-                        B[k][l] = A[l][k];
-
-                if (i == j)
-                    B[k][k] = temp;
-            }
-
-}
-
-void transpose_asymetric(int M, int N, int A[N][M], int B[M][N], const unsigned short bsize) {
-    int i,j,p,q;
-    int temp;
-
-    for(i = 0; i < M; i += bsize) {
-        for (j = 0; j < N; j += bsize) {
-            for (p = i; p < i + bsize && p < M; p++) {
-                // Only for diagonal elements, do we have the problem
+            for (p = i; p < i + bsize && p < M; p++)
                 for (q = j; q < j + bsize && q < N; q++)
-
-                    if (p == q)
-                        temp = A[p][p];
-                    else
                         B[p][q] = A[q][p];
 
-                if (i == j)
-                    B[p][p] = temp;
-
-            }
-        }
-    }
 }
-
+/*
 void transpose_generic(int M, int N, int A[N][M], int B[M][N], const unsigned short block_size) {
     unsigned short i, j, k, l;
     int *ap, *bp;
@@ -129,7 +85,7 @@ void transpose_generic(int M, int N, int A[N][M], int B[M][N], const unsigned sh
         }
     }
 }
-
+*/
 /*
  * transpose_submit - This is the solution transpose function that you
  *     will be graded on for Part B of the assignment. Do not change
@@ -140,16 +96,15 @@ void transpose_generic(int M, int N, int A[N][M], int B[M][N], const unsigned sh
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N])
 {
-
     if (M == 32)
         transpose_32x32(M, N, A, B);
-    if (M == 61)
-        transpose_61x67(M,N,A,B);
+    else if (M == 61)
+        // not sure why, but blocksize of 18 gives best results but it does...
+        transpose_generic(M, N, A, B, 18);
     else if (M == 64)
         transpose_generic(M, N, A, B, (1 << 4) / sizeof(int));
-    else if (M != N)
-        transpose_asymetric(M, N, A, B, (1 << 5) / sizeof(int));
-
+    else
+        transpose_generic(M,N,A,B, (1 << 5) / sizeof(int));
 
 }
 
