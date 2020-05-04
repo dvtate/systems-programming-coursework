@@ -144,7 +144,7 @@ void *mm_malloc(size_t size)
         // dynamic padding based on size
         // new_size += 16;
         // new_size += new_size / 8;
-        // new_size -= new_size % 8;
+        //new_size -= new_size % 8;
         new_size = ALIGN(new_size + new_size / 8);
         // no free space found, need to grow heap
         if ((free_block = mem_sbrk(new_size)) == (void*) -1)
