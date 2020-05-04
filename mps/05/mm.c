@@ -65,7 +65,6 @@ void coalesce(struct free_blk_head* header) {
 	if ((void*) next_header < mem_heap_hi())
 		next_alloc = GET_ALLOC(next_header);
 
-
 	if (prev_alloc && next_alloc) {
 		free_list_head->next->prev = header;
 		free_list_head->next = header;
