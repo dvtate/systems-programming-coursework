@@ -413,7 +413,7 @@ int main(int argc, char** argv)
             putc('\n', stdout);
 
 
-        // itoh(htoi(cmd.address), cmd.address);
+        // itoh(htoi(cmd.address) - 1, cmd.address);
         //     cmd.size--;
         // }
     }
