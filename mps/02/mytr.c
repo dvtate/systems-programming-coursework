@@ -32,20 +32,18 @@ int main(int argc, char** argv) {
 	}
 
 	char c;
-	unsigned int i;
 	while ((c = fgetc(stdin)) != EOF) {
-		for (i = 0; i < terms; i++)
+		for (unsigned int i = 0; i < terms; i++)
 			if (from[i] == c) {
 				c = to[i];
 				if (!delete_mode)
 					fputc(c, stdout);
 				break;
 			}
-		if (i == terms) 
+			
 			fputc(c, stdout);
-	}
+		}
 
 
 	return 0;
 }
-
